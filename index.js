@@ -947,11 +947,13 @@ function buildOfficialNoticePdfBuffer(title, message, recipientName, dateStr) {
     });
 }
 
-// 🎙️ सुरक्षित एवं क्रैश-प्रूफ Swara Neural AI वॉइस जनरेटर
+// 🎙️ 100% SWARA NEURAL AI HD VOICE ENGINE (NO ROBOTIC FALLBACK)
 async function generateHindiVoiceNote(text) {
+    if (!text || String(text).trim().length === 0) return null;
+
     const stamp = Date.now() + '_' + Math.floor(Math.random() * 100000);
-    const mp3Path = path.join(os.tmpdir(), `voice_${stamp}.mp3`);
-    const oggPath = path.join(os.tmpdir(), `voice_${stamp}.ogg`);
+    const mp3Path = path.join(os.tmpdir(), `swara_${stamp}.mp3`);
+    const oggPath = path.join(os.tmpdir(), `swara_${stamp}.ogg`);
 
     const cleanup = () => {
         try { if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path); } catch (e) {}
@@ -959,9 +961,30 @@ async function generateHindiVoiceNote(text) {
     };
 
     try {
-        const tts = new MsEdgeTTS();
-        await tts.setMetadata(HINDI_FEMALE_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-        const { audioStream } = await tts.toStream(text);
+        let audioStream = null;
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        // 🎯 High-Availability Retry Loop (Sirf Swara Voice Lock)
+        while (attempts < maxAttempts && !audioStream) {
+            try {
+                attempts++;
+                const tts = new MsEdgeTTS();
+                await tts.setMetadata("hi-IN-SwaraNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+                const res = await tts.toStream(text);
+                audioStream = res.audioStream;
+            } catch (err) {
+                console.error(`⚠️ Swara Attempt ${attempts} failed:`, err.message);
+                if (attempts < maxAttempts) {
+                    await new Promise((r) => setTimeout(r, 800));
+                }
+            }
+        }
+
+        if (!audioStream) {
+            cleanup();
+            return null;
+        }
 
         const chunks = [];
         await new Promise((resolve, reject) => {
@@ -972,12 +995,17 @@ async function generateHindiVoiceNote(text) {
 
         fs.writeFileSync(mp3Path, Buffer.concat(chunks));
 
+        // 🎯 WhatsApp Native Voice Note Converter (Libopus PTT)
         return await new Promise((resolve) => {
             ffmpeg(mp3Path)
+                .toFormat('ogg')
                 .audioCodec('libopus')
-                .audioBitrate('32k')
                 .audioChannels(1)
-                .format('ogg')
+                .audioBitrate('32k')
+                .addOutputOptions([
+                    '-avoid_negative_ts make_zero',
+                    '-application voip'
+                ])
                 .on('end', () => {
                     try {
                         const buffer = fs.readFileSync(oggPath);
@@ -994,53 +1022,9 @@ async function generateHindiVoiceNote(text) {
                 })
                 .save(oggPath);
         });
-    } catch (err) {
-        console.error('⚠️ Edge TTS असफल, फॉलबैक का उपयोग हो रहा है:', err.message);
-        try {
-            const encodedText = encodeURIComponent(text);
-            const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=hi&client=tw-ob`;
-
-            const response = await axios({
-                method: 'get',
-                url: ttsUrl,
-                responseType: 'stream',
-                headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
-
-            const writer = fs.createWriteStream(mp3Path);
-            response.data.pipe(writer);
-
-            await new Promise((resolve, reject) => {
-                writer.on('finish', resolve);
-                writer.on('error', reject);
-            });
-
-            return await new Promise((resolve) => {
-                ffmpeg(mp3Path)
-                    .audioCodec('libopus')
-                    .audioBitrate('32k')
-                    .audioChannels(1)
-                    .format('ogg')
-                    .on('end', () => {
-                        try {
-                            const buffer = fs.readFileSync(oggPath);
-                            cleanup();
-                            resolve(buffer);
-                        } catch (e) {
-                            cleanup();
-                            resolve(null);
-                        }
-                    })
-                    .on('error', () => {
-                        cleanup();
-                        resolve(null);
-                    })
-                    .save(oggPath);
-            });
-        } catch (fallbackErr) {
-            cleanup();
-            return null;
-        }
+    } catch (finalErr) {
+        cleanup();
+        return null;
     }
 }
 
