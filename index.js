@@ -947,17 +947,28 @@ function buildOfficialNoticePdfBuffer(title, message, recipientName, dateStr) {
     });
 }
 
-// 🎙️ 100% SWARA NEURAL AI HD VOICE ENGINE (NO ROBOTIC FALLBACK)
+// ============================================================================
+// 🎙️ JRD ENTERPRISE SWARA NEURAL AI HD VOICE ENGINE (100% PURE REAL VOICE)
+// ============================================================================
 async function generateHindiVoiceNote(text) {
-    if (!text || String(text).trim().length === 0) return null;
+    if (!text || String(text).trim().length === 0) {
+        console.log('⚠️ वॉइस जनरेशन निरस्त: टेक्स्ट खाली है।');
+        return null;
+    }
 
-    const stamp = Date.now() + '_' + Math.floor(Math.random() * 100000);
-    const mp3Path = path.join(os.tmpdir(), `swara_${stamp}.mp3`);
-    const oggPath = path.join(os.tmpdir(), `swara_${stamp}.ogg`);
+    // 🎯 अस्थायी फ़ाइलों के लिए अद्वितीय टाइमस्टैम्प नाम
+    const stamp = Date.now() + '_' + Math.floor(Math.random() * 1000000);
+    const mp3Path = path.join(os.tmpdir(), `swara_raw_${stamp}.mp3`);
+    const oggPath = path.join(os.tmpdir(), `swara_final_${stamp}.ogg`);
 
+    // 🧹 मेमोरी व स्टोरेज सुरक्षा: दोनों अस्थायी फ़ाइलों को साफ़ करने का हेल्पर
     const cleanup = () => {
-        try { if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path); } catch (e) {}
-        try { if (fs.existsSync(oggPath)) fs.unlinkSync(oggPath); } catch (e) {}
+        try { 
+            if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path); 
+        } catch (e) {}
+        try { 
+            if (fs.existsSync(oggPath)) fs.unlinkSync(oggPath); 
+        } catch (e) {}
     };
 
     try {
@@ -965,38 +976,50 @@ async function generateHindiVoiceNote(text) {
         let attempts = 0;
         const maxAttempts = 3;
 
-        // 🎯 High-Availability Retry Loop (Sirf Swara Voice Lock)
+        // 🎯 1. SWARA NEURAL HIGH-AVAILABILITY RETRY ENGINE
+        // (अगर नेटवर्क में क्षणिक रुकावट आए तो यह 3 बार तक Swara से पुनः प्रयास करेगा)
         while (attempts < maxAttempts && !audioStream) {
             try {
                 attempts++;
                 const tts = new MsEdgeTTS();
+                
+                // शुद्ध मानवीय हिंदी स्वरा न्यूरल आवाज़ (24kHz 48kbps HD)
                 await tts.setMetadata("hi-IN-SwaraNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+                
                 const res = await tts.toStream(text);
                 audioStream = res.audioStream;
-            } catch (err) {
-                console.error(`⚠️ Swara Attempt ${attempts} failed:`, err.message);
+            } catch (connErr) {
+                console.error(`⚠️ Swara Neural Edge-TTS कनेक्शन प्रयास ${attempts} विफल:`, connErr.message);
                 if (attempts < maxAttempts) {
-                    await new Promise((r) => setTimeout(r, 800));
+                    await new Promise((resolveWait) => setTimeout(resolveWait, 1000));
                 }
             }
         }
 
+        // यदि 3 प्रयासों के बाद भी माइक्रोसॉफ्ट सर्वर से स्ट्रीम न मिले तो सुरक्षित एग्जिट
         if (!audioStream) {
+            console.error('❌ Swara Neural कनेक्ट नहीं हो सका। रोबोटिक फ़ॉलबैक ब्लॉक कर दिया गया है।');
             cleanup();
             return null;
         }
 
+        // 🎯 2. ऑडियो डेटा चंक्स को एकत्रित करके MP3 बफ़र तैयार करना
         const chunks = [];
-        await new Promise((resolve, reject) => {
+        await new Promise((resolveStream, rejectStream) => {
             audioStream.on('data', (chunk) => chunks.push(chunk));
-            audioStream.on('end', resolve);
-            audioStream.on('error', reject);
+            audioStream.on('end', resolveStream);
+            audioStream.on('error', (err) => {
+                console.error('❌ ऑडियो स्ट्रीम डेटा संग्रह में त्रुटि:', err.message);
+                rejectStream(err);
+            });
         });
 
+        // MP3 फ़ाइल डिस्क पर राइट करें
         fs.writeFileSync(mp3Path, Buffer.concat(chunks));
 
-        // 🎯 WhatsApp Native Voice Note Converter (Libopus PTT)
-        return await new Promise((resolve) => {
+        // 🎯 3. FFMPEG LIBOPUS NATIVE WHATSAPP PTT CONVERTER
+        // WhatsApp पर रियल ग्रीन-माइक वॉइस नोट के लिए OGG (Opus) एनकोडिंग
+        return await new Promise((resolveFinal) => {
             ffmpeg(mp3Path)
                 .toFormat('ogg')
                 .audioCodec('libopus')
@@ -1008,21 +1031,25 @@ async function generateHindiVoiceNote(text) {
                 ])
                 .on('end', () => {
                     try {
-                        const buffer = fs.readFileSync(oggPath);
+                        const finalBuffer = fs.readFileSync(oggPath);
                         cleanup();
-                        resolve(buffer);
+                        resolveFinal(finalBuffer);
                     } catch (readErr) {
+                        console.error('❌ OGG बफ़र पढ़ने में विफलता:', readErr.message);
                         cleanup();
-                        resolve(null);
+                        resolveFinal(null);
                     }
                 })
-                .on('error', () => {
+                .on('error', (ffmpegErr) => {
+                    console.error('❌ FFmpeg Opus एन्कोडिंग विफल:', ffmpegErr.message);
                     cleanup();
-                    resolve(null);
+                    resolveFinal(null);
                 })
                 .save(oggPath);
         });
-    } catch (finalErr) {
+
+    } catch (finalCatchErr) {
+        console.error('❌ generateHindiVoiceNote में अप्रत्याशित अपवाद:', finalCatchErr.message);
         cleanup();
         return null;
     }
