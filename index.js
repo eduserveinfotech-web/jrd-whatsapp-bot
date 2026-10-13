@@ -1601,7 +1601,52 @@ app.get('/clear-lid-cache', (req, res) => {
         res.status(500).send('❌ Error: ' + e.message);
     }
 });
+// 🔧 VOICE DEBUG ROUTE: browser mein /test-voice kholo
+app.get('/test-voice', async (req, res) => {
+    const out = { steps: [] };
+    const log = (s) => out.steps.push(s);
 
+    try {
+        try { log('msedge-tts version: ' + require('msedge-tts/package.json').version); } catch (e) { log('version padh nahi paya'); }
+        log('ffmpegPath: ' + (ffmpegPath || 'NULL'));
+
+        // STEP 1: TTS
+        const tts = new MsEdgeTTS();
+        await tts.setMetadata(HINDI_FEMALE_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+        log('setMetadata OK');
+
+        const r = await tts.toStream('नमस्ते, यह जांच है।');
+        const stream = (r && r.audioStream) ? r.audioStream : r;
+        log('toStream OK, keys: ' + Object.keys(r || {}).join(','));
+
+        const chunks = [];
+        await new Promise((resolve, reject) => {
+            const t = setTimeout(() => reject(new Error('timeout 20s')), 20000);
+            stream.on('data', c => chunks.push(Buffer.from(c)));
+            stream.on('end', () => { clearTimeout(t); resolve(); });
+            stream.on('close', () => { clearTimeout(t); resolve(); });
+            stream.on('error', e => { clearTimeout(t); reject(e); });
+        });
+        const mp3 = Buffer.concat(chunks);
+        log('MP3 bytes: ' + mp3.length);
+        if (mp3.length < 1000) throw new Error('MP3 khali aaya');
+
+        // STEP 2: ffmpeg
+        const mp3Path = path.join(os.tmpdir(), 'test_voice.mp3');
+        const oggPath = path.join(os.tmpdir(), 'test_voice.ogg');
+        fs.writeFileSync(mp3Path, mp3);
+        await new Promise((resolve, reject) => {
+            ffmpeg(mp3Path).noVideo().audioCodec('libopus').audioChannels(1)
+                .audioFrequency(48000).audioBitrate('32k').format('ogg')
+                .on('end', resolve).on('error', reject).save(oggPath);
+        });
+        log('OGG bytes: ' + fs.statSync(oggPath).size);
+        log('✅ SAB OK: voice ban rahi hai');
+    } catch (e) {
+        log('❌ FAIL: ' + e.message);
+    }
+    res.json(out);
+});
 app.get('/', (req, res) => {
     res.send(`JRD WhatsApp Bot Status: ${isBotReady ? 'Connected ✅' : 'Waiting for QR scan ⏳'}`);
 });
