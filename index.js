@@ -1601,6 +1601,23 @@ app.get('/clear-lid-cache', (req, res) => {
         res.status(500).send('❌ Error: ' + e.message);
     }
 });
+
+app.get('/test-voice2', async (req, res) => {
+    const out = { steps: [] };
+    const log = (s) => out.steps.push(s);
+    try {
+        const { EdgeTTS } = await import('edge-tts-universal');
+        log('import OK');
+        const tts = new EdgeTTS('नमस्ते, यह जांच है।', 'hi-IN-SwaraNeural');
+        const result = await tts.synthesize();
+        const mp3 = Buffer.from(await result.audio.arrayBuffer());
+        log('MP3 bytes: ' + mp3.length);
+        log(mp3.length > 1000 ? '✅ TTS OK' : '❌ audio khali');
+    } catch (e) {
+        log('❌ FAIL: ' + e.message);
+    }
+    res.json(out);
+});
 // 🔧 VOICE DEBUG ROUTE: browser mein /test-voice kholo
 app.get('/test-voice', async (req, res) => {
     const out = { steps: [] };
